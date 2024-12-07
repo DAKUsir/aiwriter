@@ -1,62 +1,130 @@
-import openai  # For OpenAI integration
-import gradio as gr
-from openai import OpenAI
+import streamlit as st
+from gradio_client import Client, handle_file
+from PIL import Image
 
-# Set your Nemotron API key
-nemotron_api_key = "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"
-nemotron_api_url = "https://integrate.api.nvidia.com/v1"  # Correct API base URL
+# Initialize Gradio clients
+image_client = Client("doevent/Face-Real-ESRGAN")
+description_client = Client("https://cd25840ad2cbe60906.gradio.live/")
 
-# Initialize the client for Nemotron API
-client = OpenAI(
-    base_url=nemotron_api_url,
-    api_key=nemotron_api_key
+# Streamlit App
+st.set_page_config(page_title="Multi-Function App", layout="centered")
+
+# Custom CSS for background color
+st.markdown(
+    """
+    <style>
+        /* Set background color */
+        body {
+            background-color:  #601EF9; /* Sea Blue */
+        }
+        /* Set text color for better visibility */
+        .stApp {
+            background-color:  #601EF9; /* Sea Blue */
+            color: black;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# Function to generate descriptions using Nemotron API
-def generate_nemotron_description(product_name, features, audience):
-    # Create the prompt based on the input
-    input_text = (
-        f"Write a highly detailed, professional, and attractive product description for a traditional craft item called '{product_name}'. "
-        f"This product has the following features: {features}. "
-        f"It is designed for {audience}. Highlight its cultural significance, craftsmanship, uniqueness, and appeal. "
-        f"Use emotional and sensory-rich language to make it compelling. The description must be at least 300 words long and suitable for e-commerce or marketing."
-    )
-
-    try:
-        # API call to the Nemotron API using the chat completion endpoint
-        completion = client.chat.completions.create(
-            model="nvidia/nemotron-4-340b-instruct",  # Adjust to your model name
-            messages=[{"role": "user", "content": input_text}],
-            temperature=0.7,
-            top_p=0.9,
-            max_tokens=250,
-            stream=False  # Set to False to get the whole response at once
-        )
-
-        # Extract the generated description
-        # Correctly access the message content
-        generated_text = completion.choices[0].message.content
-        return generated_text.strip()
-
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
-
-# Gradio interface for ease of use
-interface = gr.Interface(
-    fn=generate_nemotron_description,
-    inputs=[
-        gr.Textbox(label="Product Name", placeholder="e.g., Handwoven Silk Saree"),
-        gr.Textbox(label="Features", placeholder="e.g., eco-friendly, handmade, intricate patterns"),
-        gr.Textbox(label="Target Audience", placeholder="e.g., luxury buyers, art enthusiasts"),
-    ],
-    outputs=gr.Textbox(label="Detailed Product Description"),
-    title="AI Product Description Generator (Nemotron)",
-    description=(
-        "Generate long, engaging, and highly detailed product descriptions using Nemotron's API. "
-        "Perfect for traditional craft items, e-commerce listings, and marketing purposes."
-    ),
-    flagging_mode="never"
+# Add clickable link at the top
+st.markdown(
+    """
+    <div style="text-align: center; margin-bottom: 20px;">
+        <a href="techhtml.html" target="_blank" style="font-size: 18px; color: white; text-decoration: none;">
+            Click here to Go back to Main Site
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
-# Launch Gradio app
-interface.launch(share=True)
+# App Title
+st.title("Multi-Function App")
+
+# User selects the feature
+feature = st.radio("Choose a feature", ["Image Enhancement", "Product Description Generator"], index=0)
+
+# IMAGE ENHANCEMENT SECTION
+if feature == "Image Enhancement":
+    st.header("Image Enhancement (ESRGAN)")
+
+    # File uploader for ESRGAN
+    uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "png", "jpeg"])
+
+    if uploaded_file is not None:
+        # Display the uploaded image
+        st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
+
+        # Select resolution model
+        resolution_model = st.radio("Select Resolution Model", ["2x", "4x", "8x"], index=0)
+
+        # Button to enhance the image
+        if st.button("Enhance Image"):
+            with st.spinner("Enhancing image..."):
+                try:
+                    # Save uploaded file to a temporary location
+                    temp_file_path = f"temp_{uploaded_file.name}"
+                    with open(temp_file_path, "wb") as f:
+                        f.write(uploaded_file.read())
+
+                    # Use Gradio's `handle_file` to prepare the file input
+                    result = image_client.predict(
+                        image=handle_file(temp_file_path),
+                        size=resolution_model,
+                        api_name="/predict"
+                    )
+
+                    # Handle the response (file path)
+                    if isinstance(result, str):
+                        # Load the enhanced image from the file path
+                        enhanced_image = Image.open(result)
+
+                        # Display the enhanced image
+                        st.success("Image Enhanced!")
+                        st.image(enhanced_image, caption="Enhanced Image", use_container_width=True)
+
+                        # Provide download button
+                        with open(result, "rb") as file:
+                            st.download_button(
+                                label="Download Enhanced Image",
+                                data=file,
+                                file_name=f"enhanced_{uploaded_file.name}",
+                                mime="image/png",
+                            )
+                    else:
+                        st.error("Unexpected response format from the API.")
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+
+# PRODUCT DESCRIPTION GENERATOR SECTION
+elif feature == "Product Description Generator":
+    st.header("Product Description Generator")
+
+    # Input fields with placeholders
+    product_name = st.text_input("Product Name", placeholder="Handwoven silk saree")
+    features = st.text_area("Features", placeholder="Intricate patterns, vibrant colors, eco-friendly material")
+    audience = st.text_area("Target Audience", placeholder="Fashion-conscious individuals, environmentally aware customers")
+
+    # Button to generate description
+    if st.button("Generate Description"):
+        if product_name and features and audience:
+            with st.spinner("Generating description..."):
+                try:
+                    # Call the Gradio API
+                    result = description_client.predict(
+                        product_name=product_name,
+                        features=features,
+                        audience=audience,
+                        api_name="/predict"
+                    )
+
+                    # Show the result in Streamlit as a code block
+                    st.success("Description Generated!")
+                    st.code(result, language='text')
+
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+        else:
+            st.warning("Please fill in all fields.")
+
