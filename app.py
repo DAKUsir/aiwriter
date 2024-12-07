@@ -127,4 +127,3 @@ elif feature == "Product Description Generator":
                     st.error(f"An error occurred: {e}")
         else:
             st.warning("Please fill in all fields.")
-
